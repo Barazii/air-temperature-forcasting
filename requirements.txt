@@ -1,0 +1,4 @@
+pandas
+pip
+sagemaker
+pytest

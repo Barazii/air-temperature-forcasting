@@ -3,15 +3,12 @@ import pytest
 import tempfile
 from pathlib import Path
 import boto3
-import sys
 import json
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from scripts.processing import processing
+from processing import processing
 
 
 @pytest.fixture(scope="function", autouse=False)
-def directory():
+def directory(monkeypatch):
     directory = Path(tempfile.mkdtemp())
     dataset_directory = directory / "dataset"
     dataset_directory.mkdir(parents=True, exist_ok=True)
@@ -25,6 +22,9 @@ def directory():
         s3.download_file(
             bucket_name, obj["Key"], str(dataset_directory / Path(obj["Key"]).name)
         )
+
+    # set the environment variables
+    monkeypatch.setenv("PREDICTION_LENGTH", 336)
 
     processing(directory)
 

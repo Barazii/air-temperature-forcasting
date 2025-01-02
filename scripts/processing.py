@@ -31,11 +31,10 @@ def _read_csv_data(pc_base_dir):
 def processing(pc_base_dir):
     datasets = _read_csv_data(pc_base_dir)
 
-    prediction_length = 14 * 24  # 14 days, 24 hours
     train_data = [
         {
             "start": str(df["datetime"].min()),
-            "target": df["TEMP"].to_list()[:-prediction_length],
+            "target": df["TEMP"].to_list()[:-int(os.environ["PREDICTION_LENGTH"])],
         }
         for df in datasets
     ]

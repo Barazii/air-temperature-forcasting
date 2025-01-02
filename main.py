@@ -3,7 +3,6 @@ from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.workflow.steps import ProcessingStep
 from sagemaker.sklearn.processing import SKLearnProcessor
 from dotenv import load_dotenv
-from sagemaker.workflow.pipeline_definition_config import PipelineDefinitionConfig
 from sagemaker.processing import ProcessingInput, ProcessingOutput
 import os
 
@@ -27,7 +26,10 @@ def go_go_go():
         max_runtime_in_seconds=600,
         base_job_name="air-temperature-forecasting-sklearn-processor",
         sagemaker_session=sagemaker_session,
-        env={"PC_BASE_DIR": os.environ["PC_BASE_DIR"]},
+        env={
+            "PC_BASE_DIR": os.environ["PC_BASE_DIR"],
+            "PREDICTION_LENGTH": os.environ["PREDICTION_LENGTH"],
+        },
     )
 
     # defining the processing step

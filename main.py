@@ -1,10 +1,14 @@
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.workflow.steps import ProcessingStep
+from sagemaker.workflow.steps import TrainingStep
 from sagemaker.sklearn.processing import SKLearnProcessor
 from dotenv import load_dotenv
 from sagemaker.processing import ProcessingInput, ProcessingOutput
 import os
+from sagemaker.inputs import TrainingInput
+from sagemaker.estimator import Estimator
+from sagemaker import image_uris
 
 
 def go_go_go():
@@ -37,7 +41,7 @@ def go_go_go():
         name="process-data",
         processor=sklearnprocessor,
         display_name="process data",
-        description="First step of the pipeline. Designed mainly to split and transform the data.",
+        description="Designed mainly to split and transform the data.",
         inputs=[
             ProcessingInput(
                 source=os.path.join(os.environ["S3_PROJECT_URI"], "dataset"),
@@ -78,13 +82,63 @@ def go_go_go():
         cache_config=None,
     )
 
+    # defining the estimator
+    image_uri = image_uris.retrieve(
+        framework="forecasting-deepar",
+        region=os.environ["AWS_REGION"],
+        version="1",
+        image_scope="training",
+    )
+    hyperparameters = {
+        "epochs": "50",
+        "time_freq": "H",
+        "prediction_length": os.environ["PREDICTION_LENGTH"],
+        "context_length": os.environ["PREDICTION_LENGTH"],
+    }
+    estimator = Estimator(
+        image_uri,
+        role=os.environ["SM_EXEC_ROLE"],
+        instance_count=int(os.environ["TRAINING_JOB_INSTANCE_COUNT"]),
+        instance_type=os.environ["TRAINING_JOB_INSTANCE_TYPE"],
+        volume_size=25,
+        max_run=36000,
+        input_mode="File",
+        output_path=f"{os.environ['S3_PROJECT_URI']}/training-step",
+        base_job_name="air-temperature-forecasting-estimator",
+        sagemaker_session=sagemaker_session,
+        hyperparameters=hyperparameters,
+        model_channel_name="model",
+    )
+
+    training_step = TrainingStep(
+        name="train-model",
+        estimator=estimator,
+        display_name="train-forecasting-deepar-model",
+        description="This step trains a pre-built deepAR model on the air temperature data.",
+        inputs={
+            "train": TrainingInput(
+                processing_step.properties.ProcessingOutputConfig.Outputs[
+                    "train"
+                ].S3Output.S3Uri,
+                content_type="json",
+            ),
+            "test": TrainingInput(
+                processing_step.properties.ProcessingOutputConfig.Outputs[
+                    "test"
+                ].S3Output.S3Uri,
+                content_type="json",
+            ),
+        },
+        cache_config=None,
+    )
+
     # build the pipeline
     pipeline = Pipeline(
         name="air-temperature-forecasting-pipeline",
         parameters=None,
         steps=[
             processing_step,
-            # tuning_step,
+            training_step,
             # evaluation_step,
             # condition_step,
         ],

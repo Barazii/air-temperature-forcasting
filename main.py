@@ -9,10 +9,18 @@ import os
 from sagemaker.inputs import TrainingInput
 from sagemaker.estimator import Estimator
 from sagemaker import image_uris
+from sagemaker.transformer import Transformer
+from sagemaker.workflow.steps import TransformStep
+from sagemaker.model import Model
+from sagemaker.workflow.model_step import ModelStep
+from sagemaker.workflow.functions import Join
+from sagemaker.workflow.steps import CacheConfig
 
 
 def go_go_go():
     load_dotenv()
+
+    cache_config = CacheConfig(enable_caching=True, expire_after="3d")
 
     sagemaker_session = PipelineSession(
         default_bucket=os.environ["S3_BUCKET_NAME"],
@@ -79,7 +87,7 @@ def go_go_go():
             ),
         ],
         code="scripts/processing.py",
-        cache_config=None,
+        cache_config=cache_config,
     )
 
     # defining the estimator
@@ -110,6 +118,7 @@ def go_go_go():
         model_channel_name="model",
     )
 
+    # define the training step
     training_step = TrainingStep(
         name="train-model",
         estimator=estimator,
@@ -129,7 +138,58 @@ def go_go_go():
                 content_type="json",
             ),
         },
-        cache_config=None,
+        cache_config=cache_config,
+    )
+
+    # create a model object out of the trained estimator
+    model = Model(
+        image_uri=image_uri,
+        model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
+        role=os.environ["SM_EXEC_ROLE"],
+        predictor_cls=None,
+        name="trained-forecasting-deepar-model",
+        sagemaker_session=sagemaker_session,
+    )
+    model_step = ModelStep(
+        name="create-model",
+        display_name="create model",
+        description="This step creates a sagemaker model from the trained estimator.",
+        step_args=model.create(
+            instance_type=os.environ["PROCESSING_JOB_INSTANCE_TYPE"]
+        ),
+    )
+    # define the transformer for evaluation
+    transformer = Transformer(
+        model_name=model_step.properties.ModelName,
+        instance_type=os.environ["TRANSFORM_JOB_INSTANCE_TYPE"],
+        instance_count=int(os.environ["TRANSFORM_JOB_INSTANCE_COUNT"]),
+        strategy="MultiRecord",
+        accept="application/jsonlines",
+        assemble_with="Line",
+        output_path=os.environ["S3_TRANSFORM_OUTPUT_URI"],
+        base_transform_job_name="air-temperature-forecasting-transformer",
+        sagemaker_session=sagemaker_session,
+    )
+    transform_step = TransformStep(
+        name="generate-test-predictions",
+        display_name="generate test predictions",
+        description="This step generates predictions on the test data using the trained model for evaluation.",
+        step_args=transformer.transform(
+            job_name="air-temperature-forecasting-transformer",
+            data=Join(
+                on="/",
+                values=[
+                    processing_step.properties.ProcessingOutputConfig.Outputs[
+                        "test"
+                    ].S3Output.S3Uri,
+                    "test.json",
+                ],
+            ),
+            split_type="Line",
+            join_source="Input",
+            content_type="application/jsonlines",
+        ),
+        cache_config=cache_config,
     )
 
     # build the pipeline
@@ -139,7 +199,7 @@ def go_go_go():
         steps=[
             processing_step,
             training_step,
-            # evaluation_step,
+            transform_step,
             # condition_step,
         ],
         sagemaker_session=sagemaker_session,

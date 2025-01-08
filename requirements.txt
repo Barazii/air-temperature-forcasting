@@ -1,4 +1,4 @@
 pandas
-pip
+python-dotenv
 sagemaker
 pytest

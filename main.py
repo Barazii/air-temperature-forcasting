@@ -144,18 +144,8 @@ def go_go_go():
         cache_config=cache_config,
     )
 
-    # define the inference model pipeline
-    # 1. define the request parser
-    request_parser = SKLearnModel(
-        model_data=None,
-        name="inference-request-parser",
-        framework_version=os.environ["SKL_VERSION"],
-        entry_point=f"./scripts/inference_request_parser.py",
-        sagemaker_session=sagemaker_session,
-        role=os.environ["SM_EXEC_ROLE"],
-    )
-
-    # 2. create a model object out of the trained estimator
+    # define the inference model
+    # create a model object out of the trained estimator
     model = Model(
         image_uri=image_uri,
         model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
@@ -163,24 +153,14 @@ def go_go_go():
         predictor_cls=None,
         name="trained-forecasting-deepar-model",
         sagemaker_session=sagemaker_session,
-    )
-
-    # build the inference model pipeline
-    inference_model = PipelineModel(
-        name="inference-model",
-        models=[
-            request_parser,
-            model,
-        ],
-        sagemaker_session=sagemaker_session,
-        role=os.environ["SM_EXEC_ROLE"],
+        # entry_point=f"./scripts/inference_request_parser.py",
     )
 
     model_step = ModelStep(
         name="create-model",
         display_name="create model",
         description="This step creates a sagemaker model from the trained estimator.",
-        step_args=inference_model.create(
+        step_args=model.create(
             instance_type=os.environ["PROCESSING_JOB_INSTANCE_TYPE"]
         ),
     )

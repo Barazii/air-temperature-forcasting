@@ -40,7 +40,7 @@ def test_processing_step_generates_the_right_dirs_and_contents(directory):
     assert len(os.listdir(directory / "test")) == 1
 
     data = []
-    with open(directory / "train/train_data.json", "rb") as f:
+    with open(directory / "train/train.json", "rb") as f:
         for line in f:
             dic = json.loads(line.decode("utf-8"))
             data.append(dic)
@@ -51,7 +51,7 @@ def test_processing_step_generates_the_right_dirs_and_contents(directory):
         assert dic.keys() == {"start", "target"}
 
     data = []
-    with open(directory / "test/test_data.json", "rb") as f:
+    with open(directory / "test/test.json", "rb") as f:
         for line in f:
             dic = json.loads(line.decode("utf-8"))
             data.append(dic)

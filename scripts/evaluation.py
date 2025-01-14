@@ -18,8 +18,17 @@ def evaluate(pc_base_dir):
     # Extract forecast means and actuals
     forecast_means = [p["mean"] for p in predictions]
     actuals = [
-        g["target"][len(g["target"])-int(os.environ["PREDICTION_LENGTH"]): ] for g in ground_truth
+        g["target"][len(g["target"]) - int(os.environ["PREDICTION_LENGTH"]) :]
+        for g in ground_truth
     ]
+
+    assert len(forecast_means) == len(
+        actuals
+    ), "mismatch in the number of time series between prediction file and ground truth file."
+    for i in range(len(forecast_means)):
+        assert len(actuals[i]) == len(
+            forecast_means[i]
+        ), "mismatch in the length of the data arrays/vectors between predicted data and ground truth data."
 
     # Calculate error metrics
     mae = mean_absolute_error(actuals, forecast_means)

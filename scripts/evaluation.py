@@ -3,6 +3,8 @@ from sklearn.metrics import mean_absolute_error
 from pathlib import Path
 import os
 
+PREDICTION_LENGTH = 336
+
 
 def evaluate(pc_base_dir):
     # Load predictions
@@ -18,21 +20,18 @@ def evaluate(pc_base_dir):
     # Extract forecast means and actuals
     forecast_means = [p["mean"] for p in predictions]
     actuals = [
-        g["target"][len(g["target"]) - int(os.environ["PREDICTION_LENGTH"]) :]
-        for g in ground_truth
+        g["target"][len(g["target"]) - PREDICTION_LENGTH :] for g in ground_truth
     ]
-
     assert len(forecast_means) == len(
         actuals
     ), "mismatch in the number of time series between prediction file and ground truth file."
     for i in range(len(forecast_means)):
-        assert len(actuals[i]) == len(
-            forecast_means[i]
+        assert (
+            len(actuals[i]) == len(forecast_means[i]) == PREDICTION_LENGTH
         ), "mismatch in the length of the data arrays/vectors between predicted data and ground truth data."
 
     # Calculate error metrics
     mae = mean_absolute_error(actuals, forecast_means)
-    # rmse = root_mean_squared_error(actuals, forecast_means)
 
     # Save metrics
     report_dir = pc_base_dir / "output"

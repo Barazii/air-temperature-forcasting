@@ -15,8 +15,12 @@ from sagemaker.model import Model
 from sagemaker.workflow.model_step import ModelStep
 from sagemaker.workflow.functions import Join
 from sagemaker.workflow.steps import CacheConfig
-from sagemaker.sklearn.model import SKLearnModel
-from sagemaker.pipeline import PipelineModel
+from sagemaker.workflow.condition_step import ConditionStep
+from sagemaker.workflow.parameters import ParameterFloat
+from sagemaker.workflow.conditions import ConditionLessThanOrEqualTo
+from sagemaker.workflow.functions import JsonGet
+from sagemaker.workflow.properties import PropertyFile
+from sagemaker.workflow.fail_step import FailStep
 
 
 def go_go_go():
@@ -177,7 +181,7 @@ def go_go_go():
         base_transform_job_name="air-temperature-forecasting-transformer",
         sagemaker_session=sagemaker_session,
         env={
-            "DEEPAR_INFERENCE_CONFIG": '{"num_samples": 100, "output_types": ["mean", "quantiles", "samples"], "quantiles": ["0.2","0.5","0.8",],}'
+            "DEEPAR_INFERENCE_CONFIG": '{"num_samples": 100, "output_types": ["mean", "quantiles", "samples"], "quantiles": ["0.2","0.5","0.8"]}'
         },
     )
     transform_step = TransformStep(
@@ -214,6 +218,12 @@ def go_go_go():
         },
     )
 
+    eval_report = PropertyFile(
+        name="evaluation-report",
+        output_name="report",
+        path="report.json",
+    )
+
     evaluation_step = ProcessingStep(
         name="evaluate-model",
         processor=sklearnprocessor,
@@ -242,23 +252,53 @@ def go_go_go():
         ],
         outputs=[
             ProcessingOutput(
+                output_name="report",
                 source="/opt/ml/processing/output",
                 destination=os.environ["S3_EVALUATION_REPORT_URI"],
             ),
         ],
         code="scripts/evaluation.py",
         cache_config=cache_config,
+        property_files=[eval_report],
+    )
+
+    # define the registration step
+    registration_step = None
+
+    fail_step = FailStep(
+        name="disregard-registration",
+        error_message="Model's MAE is greater than MAE threshold. Model performance unacceptable.",
+    )
+
+    MAE_threshold = ParameterFloat(name="MAE_threshold", default_value=20.0)
+    condition = ConditionLessThanOrEqualTo(
+        left=JsonGet(
+            step_name=evaluation_step.name,
+            property_file=eval_report,
+            json_path="MAE",
+        ),
+        right=MAE_threshold,
+    )
+
+    condition_step = ConditionStep(
+        name="check-model-performace",
+        display_name="check model performance",
+        description="This step compares model prediction error with a predefined threshold.",
+        conditions=[condition],
+        if_steps=[],
+        else_steps=[fail_step],
     )
 
     # build the pipeline
     pipeline = Pipeline(
         name="air-temperature-forecasting-pipeline",
-        parameters=None,
+        parameters=[MAE_threshold],
         steps=[
-            processing_step,
-            training_step,
-            transform_step,
-            # condition_step,
+            # processing_step,
+            # training_step,
+            # transform_step,
+            evaluation_step,
+            condition_step,
         ],
         sagemaker_session=sagemaker_session,
     )

@@ -21,12 +21,15 @@ from sagemaker.workflow.conditions import ConditionLessThanOrEqualTo
 from sagemaker.workflow.functions import JsonGet
 from sagemaker.workflow.properties import PropertyFile
 from sagemaker.workflow.fail_step import FailStep
+import json
+import boto3
+from sagemaker.processing import ScriptProcessor
 
 
 def go_go_go():
     load_dotenv()
 
-    cache_config = CacheConfig(enable_caching=True, expire_after="3d")
+    cache_config = CacheConfig(enable_caching=True, expire_after="10d")
 
     sagemaker_session = PipelineSession(
         default_bucket=os.environ["S3_BUCKET_NAME"],
@@ -262,8 +265,88 @@ def go_go_go():
         property_files=[eval_report],
     )
 
+    # define the experiment tracking step
+    sklearnprocessor = ScriptProcessor(
+        image_uri="482497089777.dkr.ecr.eu-north-1.amazonaws.com/cometml:latest",
+        role=os.environ["SM_EXEC_ROLE"],
+        instance_count=int(os.environ["PROCESSING_JOB_INSTANCE_COUNT"]),
+        instance_type=os.environ["PROCESSING_JOB_INSTANCE_TYPE"],
+        env={
+            "COMET_API_KEY": os.environ["COMET_API_KEY"],
+            "COMET_PROJECT_NAME": os.environ["COMET_PROJECT_NAME"],
+            "TRAINING_JOB_NAME": training_step.properties.TrainingJobName,
+            "TRAIN_DATA_S3_URI": processing_step.properties.ProcessingOutputConfig.Outputs[
+                "train"
+            ].S3Output.S3Uri,
+            "EVALUATION_REPORT_S3_URI": os.environ["S3_EVALUATION_REPORT_URI"],
+            "AWS_REGION": os.environ["AWS_REGION"],
+        },
+        command=["python3"]
+    )
+
+    tracking_step = ProcessingStep(
+        name="track-experiment",
+        processor=sklearnprocessor,
+        display_name="track experiment",
+        description="This step logs information obtained from the training and evaluation steps using Comet ML.",
+        code="scripts/tracking.py",
+        cache_config=cache_config,
+        depends_on=[training_step, evaluation_step],
+    )
+
+    # create a template of the deepar request format
+    deepar_request_template = {
+        "instances": [
+            {
+                # time series #1
+                "start": "2023-01-01 00:00:00",
+                "target": [0.0] * int(os.environ["PREDICTION_LENGTH"]),
+            },
+            {
+                # time series #2
+                "start": "2023-01-01 00:00:00",
+                "target": [0.0] * int(os.environ["PREDICTION_LENGTH"]),
+            },
+        ],
+        "configuration": {
+            "num_samples": 50,
+            "output_types": ["mean", "quantiles", "samples"],
+            "quantiles": ["0.5", "0.9"],
+        },
+    }
+
+    # dump it in a json object
+    deepar_request_json = json.dumps(deepar_request_template)
+
+    # upload it to s3
+    file_name = "input_sample_payload.json"
+    s3_client = boto3.client("s3")
+    s3_client.put_object(
+        Bucket=os.environ["S3_BUCKET_NAME"],
+        Key=file_name,
+        Body=deepar_request_json,
+        ContentType="application/json",
+    )
+
     # define the registration step
-    registration_step = None
+    registration_step = ModelStep(
+        name="register-model",
+        display_name="register-model",
+        step_args=model.register(
+            model_package_group_name=os.environ["MODEL_PACKAGE_GROUP_NAME"],
+            # model_metrics=model_metrics,
+            # drift_check_baselines=drift_check_baselines,
+            approval_status="PendingManualApproval",
+            content_types=["application/json"],
+            response_types=["application/json"],
+            inference_instances=[os.environ["INFERENCE_INSTANCE_TYPE"]],
+            image_uri=image_uri,
+            domain="MACHINE_LEARNING",
+            task="REGRESSION",
+            sample_payload_url=f"{os.environ['S3_PROJECT_URI']} / {file_name}",
+            description="commit message here",
+        ),
+    )
 
     fail_step = FailStep(
         name="disregard-registration",
@@ -285,7 +368,7 @@ def go_go_go():
         display_name="check model performance",
         description="This step compares model prediction error with a predefined threshold.",
         conditions=[condition],
-        if_steps=[],
+        if_steps=[registration_step],
         else_steps=[fail_step],
     )
 
@@ -297,8 +380,9 @@ def go_go_go():
             # processing_step,
             # training_step,
             # transform_step,
-            evaluation_step,
-            condition_step,
+            # evaluation_step,
+            tracking_step,
+            # condition_step,
         ],
         sagemaker_session=sagemaker_session,
     )

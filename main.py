@@ -294,60 +294,6 @@ def go_go_go():
         depends_on=[training_step, evaluation_step],
     )
 
-    # create a template of the deepar request format
-    deepar_request_template = {
-        "instances": [
-            {
-                # time series #1
-                "start": "2023-01-01 00:00:00",
-                "target": [0.0] * int(os.environ["PREDICTION_LENGTH"]),
-            },
-            {
-                # time series #2
-                "start": "2023-01-01 00:00:00",
-                "target": [0.0] * int(os.environ["PREDICTION_LENGTH"]),
-            },
-        ],
-        "configuration": {
-            "num_samples": 50,
-            "output_types": ["mean", "quantiles", "samples"],
-            "quantiles": ["0.5", "0.9"],
-        },
-    }
-
-    # dump it in a json object
-    deepar_request_json = json.dumps(deepar_request_template)
-
-    # upload it to s3
-    file_name = "input_sample_payload.json"
-    s3_client = boto3.client("s3")
-    s3_client.put_object(
-        Bucket=os.environ["S3_BUCKET_NAME"],
-        Key=file_name,
-        Body=deepar_request_json,
-        ContentType="application/json",
-    )
-
-    # define the registration step
-    registration_step = ModelStep(
-        name="register-model",
-        display_name="register-model",
-        step_args=model.register(
-            model_package_group_name=os.environ["MODEL_PACKAGE_GROUP_NAME"],
-            # model_metrics=model_metrics,
-            # drift_check_baselines=drift_check_baselines,
-            approval_status="PendingManualApproval",
-            content_types=["application/json"],
-            response_types=["application/json"],
-            inference_instances=[os.environ["INFERENCE_INSTANCE_TYPE"]],
-            image_uri=image_uri,
-            domain="MACHINE_LEARNING",
-            task="REGRESSION",
-            sample_payload_url=f"{os.environ['S3_PROJECT_URI']} / {file_name}",
-            description="commit message here",
-        ),
-    )
-
     fail_step = FailStep(
         name="disregard-registration",
         error_message="Model's MAE is greater than MAE threshold. Model performance unacceptable.",
@@ -368,7 +314,7 @@ def go_go_go():
         display_name="check model performance",
         description="This step compares model prediction error with a predefined threshold.",
         conditions=[condition],
-        if_steps=[registration_step],
+        if_steps=[tracking_step],
         else_steps=[fail_step],
     )
 
@@ -377,12 +323,11 @@ def go_go_go():
         name="air-temperature-forecasting-pipeline",
         parameters=[MAE_threshold],
         steps=[
-            # processing_step,
-            # training_step,
-            # transform_step,
-            # evaluation_step,
-            tracking_step,
-            # condition_step,
+            processing_step,
+            training_step,
+            transform_step,
+            evaluation_step,
+            condition_step,
         ],
         sagemaker_session=sagemaker_session,
     )

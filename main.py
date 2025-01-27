@@ -29,7 +29,7 @@ from sagemaker.processing import ScriptProcessor
 def go_go_go():
     load_dotenv()
 
-    cache_config = CacheConfig(enable_caching=True, expire_after="10d")
+    cache_config = CacheConfig(enable_caching=False, expire_after="10d")
 
     sagemaker_session = PipelineSession(
         default_bucket=os.environ["S3_BUCKET_NAME"],
@@ -160,7 +160,6 @@ def go_go_go():
         predictor_cls=None,
         name="trained-forecasting-deepar-model",
         sagemaker_session=sagemaker_session,
-        # entry_point=f"./scripts/inference_request_parser.py",
     )
 
     model_step = ModelStep(
@@ -263,6 +262,7 @@ def go_go_go():
         code="scripts/evaluation.py",
         cache_config=cache_config,
         property_files=[eval_report],
+        depends_on=[transform_step],
     )
 
     # define the experiment tracking step

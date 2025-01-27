@@ -40,12 +40,28 @@ def processing(pc_base_dir):
         }
         for df in datasets
     ]
+
     test_data = [
-        {
-            "start": str(df["datetime"].min()),
-            "target": df["TEMP"].fillna(df["TEMP"].mean()).tolist(),
-        }
+        item
         for df in datasets
+        for item in [
+            {
+                "start": str(df["datetime"].min()),
+                "target": df["TEMP"].fillna(df["TEMP"].mean()).tolist(),
+            },
+            {
+                "start": str(df["datetime"].min()),
+                "target": df["TEMP"]
+                .fillna(df["TEMP"].mean())
+                .tolist()[: -int(os.environ["PREDICTION_LENGTH"])],
+            },
+            {
+                "start": str(df["datetime"].min()),
+                "target": df["TEMP"]
+                .fillna(df["TEMP"].mean())
+                .tolist()[: -2 * int(os.environ["PREDICTION_LENGTH"])],
+            },
+        ]
     ]
 
     _save_data_splits(train_data, test_data, pc_base_dir)

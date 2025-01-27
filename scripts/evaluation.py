@@ -2,8 +2,23 @@ import json
 from sklearn.metrics import mean_absolute_error
 from pathlib import Path
 import os
+import numpy as np
+
 
 PREDICTION_LENGTH = 336
+
+
+def root_mean_squared_error(y_true, y_pred):
+    # Convert inputs to numpy arrays if they aren't already
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Check dimensions
+    if y_true.shape != y_pred.shape:
+        raise ValueError("Inputs must have the same shape")
+
+    # Calculate RMSE
+    return np.sqrt(np.mean(np.square(y_true - y_pred)))
 
 
 def evaluate(pc_base_dir):
@@ -32,6 +47,7 @@ def evaluate(pc_base_dir):
 
     # Calculate error metrics
     mae = mean_absolute_error(actuals, forecast_means)
+    rmse = root_mean_squared_error(actuals, forecast_means)
 
     # Save metrics
     report_dir = pc_base_dir / "output"
@@ -40,6 +56,7 @@ def evaluate(pc_base_dir):
         json.dump(
             {
                 "MAE": mae,
+                "RMSE": rmse,
             },
             f,
         )

@@ -21,8 +21,6 @@ from sagemaker.workflow.conditions import ConditionLessThanOrEqualTo
 from sagemaker.workflow.functions import JsonGet
 from sagemaker.workflow.properties import PropertyFile
 from sagemaker.workflow.fail_step import FailStep
-import json
-import boto3
 from sagemaker.processing import ScriptProcessor
 
 
